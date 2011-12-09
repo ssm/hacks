@@ -1,0 +1,47 @@
+#!/bin/sh
+
+if [ ! -d 'manifests' ]; then
+    echo 'Must be in root of puppet SCM dir'
+    exit 1
+fi
+
+tmpdir=$(mktemp -d /tmp/puppet.XXXXXXXX)
+rootdir=$(pwd)
+
+##############################
+# puppet.conf
+cat > $tmpdir/puppet.conf <<EOF
+[main]
+manifest=$tmpdir/site.pp
+manifestdir=$rootdir/puppetmaster/conf/manifests
+modulepath=$rootdir/modules:$rootdir/clients
+logdir=$tmpdir/log
+vardir=$tmpdir/var
+logdest=console
+
+[master]
+certname=localhost
+thin_storeconfigs=true
+EOF
+
+##############################
+# autosign.conf
+cat > $tmpdir/autosign.conf << EOF
+localhost
+$(hostname --fqdn)
+EOF
+
+##############################
+# site.pp
+if [ -f "$1" ]; then
+  cp -v "$1" $tmpdir/site.pp
+else
+  cat > $tmpdir/site.pp <<EOF
+import "$rootdir/puppetmaster/conf/manifests/site.pp"
+node 'default' {
+  notice("No configuration for this node. Call my-puppet-master with a site.pp file as argument if this was not your intention")
+}
+EOF
+fi
+
+puppet master --verbose --no-daemonize --confdir $tmpdir

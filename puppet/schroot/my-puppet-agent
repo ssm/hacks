@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ -z "$SCHROOT_COMMAND" ]; then
+   echo "Must be in schroot"
+   exit 1
+fi
+
+sudo puppet agent --logdest console -t --server localhost --pluginsync true

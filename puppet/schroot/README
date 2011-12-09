@@ -1,0 +1,7 @@
+Two scripts to help testing puppet manifests.
+
+Run "my-puppet-master /path/to/some/site.pp" to start a master with sqlite2
+storeconfigs.
+
+Run "my-puppet-agent" in a schroot session, to test puppet manifests through
+the master.
