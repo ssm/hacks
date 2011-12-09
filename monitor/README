@@ -1,0 +1,9 @@
+Three scripts to help verify nagios / icinga configuration.
+
+my-monitor-testconf: Check syntax of nagios / icinga configuration in current
+directory in a "nagios" and "icinga" schroot.
+
+my-monitor-copy-and-check: Used by my-monitor-testconf.  Copies configuration
+to a temporary directory, rewrites paths, and checks syntax.
+
+my-monitor-update-schroots: Script to prepare schroots used for testing.

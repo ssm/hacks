@@ -1,0 +1,53 @@
+#!/bin/sh
+
+# Script to copy icinga/nagios configuration in current directory to a
+# temp directory, rewrite paths within the configuration, and run a
+# syntax check.
+#
+# If nagios is installed, it runs nagios3 -v <tempdir>/nagios.cfg
+#
+# If icinga is installed, it runs icinga -v <tempdir>/icinga.cfg
+
+# Do not allow empty variables
+set -u
+
+TEMPDIR=$(mktemp -d)
+
+status=0
+# Make directories
+for dir in $(find . -mindepth 1 -type d); do
+    mkdir "${TEMPDIR}/${dir#./}"
+done
+
+# Copy files to tempdir, rewrite file paths from production path to
+# tempdir path
+for file in $(find . -type f -name '*.cfg'); do
+    sed \
+        -e "s|/etc/nagios/|$TEMPDIR/|g" \
+        -e "s|/usr/local/nagios/etc/|$TEMPDIR/|g" \
+        -e "s|/srv/icinga/config/|$TEMPDIR/|g" \
+        < $file > "$TEMPDIR/${file#./}"
+done
+
+# Create dynamic configuration files
+cp auth_user/Makefile auth_user/parsescript.pl auth_user/userlist.txt $TEMPDIR/auth_user
+make -C "${TEMPDIR}/auth_user"
+
+# Run syntax check
+if [ -e /usr/sbin/nagios3 -o -e /usr/sbin/icinga ]; then
+    if [ -e /usr/sbin/nagios3 ]; then
+        /usr/sbin/nagios3 -v $TEMPDIR/nagios.cfg
+    fi
+
+    if [ -e /usr/sbin/icinga ]; then
+        /usr/sbin/icinga -v $TEMPDIR/icinga.cfg
+    fi
+else
+    echo "Need to have Icinga or Nagios installed"
+    status=1
+fi
+
+/bin/rm -r "${TEMPDIR}"
+
+exit $status
+

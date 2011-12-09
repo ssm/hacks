@@ -1,0 +1,61 @@
+#!/bin/sh
+
+# Wrapper script to check the syntax of the configuration in the
+# current directory in both icinga and nagios, if schroot sessions
+# with those names are available.
+
+# The "my-monitor-copy-and-check" script runs within each schroot.
+
+# Sanity check
+if [ ! -e icinga.cfg -a ! -e nagios.cfg -a ! -e testconf.sh ]; then
+    echo "This script must be executed in the nagios configuration directory"
+    exit 1
+fi
+
+if [ ! -e ~/bin/my-monitor-copy-and-check ]; then
+    echo "Missing syntax check script"
+    exit 1
+fi
+
+# Tempdirs
+testconf=$(mktemp /tmp/testconf.XXXXXXXX)
+i_stdout=$(mktemp /tmp/testconf.icinga.stdout.XXXXXXXX)
+i_stderr=$(mktemp /tmp/testconf.icinga.stderr.XXXXXXXX)
+n_stdout=$(mktemp /tmp/testconf.nagios.stdout.XXXXXXXX)
+n_stderr=$(mktemp /tmp/testconf.nagios.stderr.XXXXXXXX)
+
+install -m 755 ~/bin/my-monitor-copy-and-check ${testconf}
+
+if (schroot -la | grep -qx 'session:icinga'); then
+    printf "icinga: syntax check..."
+    schroot -c icinga -r -u root -- sudo -u nagios ${testconf} > $i_stdout 2> $i_stderr
+    i_status=$?
+
+    if [ "$i_status" = "0" ]; then
+        echo " OK"
+    else
+        echo " Failed (${i_status})"
+        cat $i_stdout
+        cat $i_stderr
+    fi
+else
+    echo "icinga: schroot session not available"
+fi
+
+if (schroot -la | grep -qx 'session:nagios'); then
+    printf "nagios: syntax check..."
+    schroot -c nagios -r -u root -- sudo -u nagios ${testconf} > $n_stdout 2> $n_stderr
+    n_status=$?
+
+    if [ "$n_status" = "0" ]; then
+        echo " OK"
+    else
+        echo " Failed (${n_status})"
+        cat $n_stdout
+        cat $n_stderr
+    fi
+else
+    echo "nagios: schroot session not available"
+fi
+
+rm -f "$i_stdout" "$i_stderr" "$n_stdout" "$n_stderr" "$testconf"

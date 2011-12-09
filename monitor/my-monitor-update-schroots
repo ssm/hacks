@@ -1,0 +1,16 @@
+#!/bin/sh
+
+# Update "default" schroot
+sbuild-update -udcar default
+
+# Nuke and install nagios schroot
+schroot -c nagios -e
+schroot -n nagios -b -c default
+schroot -c nagios -r -u root -- apt-get -y install nagios3
+echo 'ssm ALL = (nagios) NOPASSWD: ALL' | schroot -c nagios -r -u root -- tee /etc/sudoers.d/ssm-nagios > /dev/null
+
+# Nuke and install icinga schroot
+schroot -c icinga -e
+schroot -n icinga -b -c default
+schroot -c icinga -r -u root -- apt-get -y install icinga
+echo 'ssm ALL = (nagios) NOPASSWD: ALL' | schroot -c icinga -r -u root -- tee /etc/sudoers.d/ssm-nagios > /dev/null
