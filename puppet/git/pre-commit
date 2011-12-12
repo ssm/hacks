@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# pre-commit hook to syntax check puppet manifests and erb templates
+# at checkin.
+
+# Stig Sandbeck Mathisen <ssm@fnord.no>
+
+# Todo:
+#  - Emit correct filename in .pp checks instead of /dev/fd/<num>
+#  - Check for invalid characters with "iconv"
+
+errors=0
+message=$(mktemp /tmp/error_msg.XXXXXX)
+
+if git-rev-parse --verify HEAD >/dev/null 2>&1
+then
+    against=HEAD
+else
+    # Initial commit: diff against an empty tree object
+    against=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+fi
+
+## Check: whitespace
+git diff-index --check --cached $against -- > $message
+if [ "$?" -ne "0" ]; then
+    cat $message
+    errors=$(expr $errrors + 1)
+fi
+
+## Check: syntax
+for file in $(git diff-index --cached --diff-filter=AM --name-only --cached $against); do
+    # Do not check empty files
+    if [ $(git cat-file -s :0:"${file}") -gt 0 ]; then
+        case "$file" in
+            *.pp)
+                # TODO: rewrite /dev/fd/foo:line to ${file}:line
+                puppet parser validate --ignoreimport \
+                    <(git cat-file blob :0:"${file}") > $message
+                ;;
+            *.erb)
+                git cat-file blob :0:"${file}" \
+                    | erb -x -P -T - | ruby -c > $message
+                ;;
+        esac
+        if [ "$?" -ne "0" ]; then
+            echo "[${file}]"
+            cat $message
+            errors=$(expr $errrors + 1)
+        fi
+    fi
+done
+
+rm -rf $message
+
+if [ "$errors" -ne "0" ]; then
+    echo "Error: $errors errors found, aborting commit."
+    exit 1
+fi

@@ -1,0 +1,112 @@
+#!/bin/bash
+
+# Stig Sandbeck Mathisen <ssm@fnord.no>
+
+set -u
+
+#------------------------------
+# Paranoia...
+export HOME=/
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+#------------------------------
+# Command line arguments
+REPOSITORY="$1"
+TRANSACTION="$2"
+
+#------------------------------
+# Constants
+puppetversion=$(puppet --version)
+if [ -z "${puppetversion/0.*}" -o -z "${puppetversion/2.6.*}" ]; then
+    export CHECK_PP="puppet --confdir=/tmp --vardir=/tmp --parseonly --ignoreimport"
+else
+    export CHECK_PP="puppet parser validate"
+fi
+
+
+#------------------------------
+# Subroutines
+
+#------------------------------
+get_file() {
+    line="$1"
+
+    if [ -x /bin/mktemp ]; then
+        tempfile="$(/bin/mktemp /tmp/${line##*/}.XXXX)"
+    elif test -f /bin/tempfile; then
+        tempfile=$(/bin/tempfile)
+    else
+        tempfile="/tmp/puppet.$$"
+        set -C
+    fi
+
+    case $line in
+        *.pp)
+            # Transform "include c_acme::$hostname" into "include c_acme::hostname"
+            svnlook cat --transaction "$TRANSACTION" "$REPOSITORY" "$line" |
+                perl -pe 's/^(\s*include\s*.*::)\$/$1/' > $tempfile
+            ;;
+        *)
+            svnlook cat --transaction "$TRANSACTION" "$REPOSITORY" "$line" > $tempfile
+            ;;
+    esac
+
+    set +C
+
+    echo $tempfile
+
+}
+
+#------------------------------
+check_syntax_erb() {
+    file=$(get_file "$1")
+
+    erb -P -x -T '-' "$file" | ruby -c
+    status=$?
+
+    rm -f "$file"
+
+    if [ "$status" != "0" ]; then
+        report_syntax_error "$1"
+    fi
+}
+
+#------------------------------
+check_syntax_puppet() {
+    file=$(get_file "$1")
+
+    $CHECK_PP "$file" >&2
+
+    status=$?
+
+    rm -f "$file"
+
+    if [ "$status" != "0" ]; then
+        report_syntax_error "$1"
+    fi
+}
+
+#------------------------------
+report_syntax_error() {
+    echo >&2 "Error: Failed syntax check for $1"
+    exit 1
+}
+
+#------------------------------
+# Main loop
+
+svnlook changed --transaction "$TRANSACTION" "$REPOSITORY" | while read tx_act tx_file ; do
+    echo "Syntax check: $tx_act $tx_file"
+    case "$tx_act" in
+        A|U|UU)
+            case "$tx_file" in
+                *.pp)
+                    check_syntax_puppet "$tx_file"
+                    ;;
+                *.erb)
+                    check_syntax_erb "$tx_file"
+                    ;;
+            esac
+            ;;
+    esac
+done
