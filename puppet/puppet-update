@@ -1,0 +1,100 @@
+#!/bin/sh
+
+# Stig Sandbeck Mathisen <ssm@fnord.no>
+
+# Update environments at /srv/puppet/env/{testing,production}
+# These should be already-cloned git repositories.
+
+# Settings
+puppet_root=/srv/puppet/env
+puppet_remote=origin
+
+# Paranoia
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+set -u
+unset puppet_environment
+
+sanity_check() {
+
+    # Check that environment, root, and module is not empty
+
+    if [ -z "$puppet_root" ]; then
+	echo "Error: puppet root not set"
+	return 1
+    fi
+
+    if [ -z "$puppet_environment" ]; then
+	echo "Error: puppet environment not set"
+	return 1
+    fi
+
+    # Check that puppet root and environment exists (the module may be
+    # new, though):
+
+    if ! [ -d "$puppet_root" ]; then
+	echo "Error: puppet root directory does not exist"
+	return 1
+    fi
+
+    if ! [ -d "$puppet_root/$puppet_environment" ]; then
+	echo "Error: puppet environment directory does not exist"
+	return 1
+    fi
+
+}
+
+log() {
+    log_tag=${log_tag:-$(basename -- $0)}
+    logger -t $(basename -- $0) -p daemon.notice "$@"
+}
+
+usage() {
+    echo "$0 [options] <-t|-p>"
+    echo
+    echo '-p : set environment to "production"'
+    echo '-t : set environment to "testing"'
+    echo '-h : this help'
+    echo '-n : noop, show diff instead'
+}
+
+while getopts ptnh opt
+do
+    case "$opt" in
+	p)
+	   puppet_environment=production
+	   ;;
+	t)
+	   puppet_environment=testing
+	   ;;
+	n)
+	   noop=true
+	   ;;
+	h)
+	    usage
+	    exit
+	    ;;
+	*)
+	    usage
+	    exit 1
+	    ;;
+    esac
+done
+shift $(($OPTIND - 1))
+
+if [ -z "${puppet_environment:-}" ]; then
+    usage
+    exit 1
+fi
+
+if sanity_check; then
+    if cd "${puppet_root}/${puppet_environment}"; then
+	git remote update
+	if [ -n "${noop:-}" ]; then
+	    git diff "${puppet_remote}/${puppet_environment}"
+	else
+	    log "Updating environment $puppet_environment (${SUDO_USER:+$SUDO_USER -> }${LOGNAME})"
+	    git pull
+	fi
+    fi
+fi
+
