@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Stig Sandbeck Mathisen <ssm@fnord.no>
+
+# Run puppet agent in noop mode, against the "testing" environment, with
+# logging to console (lazy mode)
+
+exec puppet agent --test --environment=testing --noop --syslogfacility=none "$@"
