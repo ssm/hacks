@@ -1,0 +1,224 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+send-mod-gearman - Send a stream of passive service and host check
+results to Mod Gearman via a gearman job server.
+
+=head1 AUTHOR
+
+Stig Sandbeck Mathisen <ssm@fnord.no>
+
+=head1 DESCRIPTION
+
+Designed as a drop-in replacement for send_nsca. It will read data on
+STDIN, and send the results to Mod Gearman.
+
+=head1 DATA FORMAT
+
+The format of the data expected on STDIN is one line per check result.
+
+A service check result has the following format
+
+    host name<tab>service description<tab>result<tab>text
+
+A host check result has the following format
+
+    host name<tab>result<tab>text
+
+=over 4
+
+=item host name
+
+This is the name of the host. This must match the nagios
+configuration.
+
+=item service description
+
+This is the service description. This must match the nagios
+configuration.
+
+=item result
+
+A single digit between 0 and 4. This corresponds to the exit code from
+a nagios check. 0 = success, 1 = warning, 2 = critical, 3 = unknown, 4
+= dependent.
+
+=item text
+
+A descriptive text displayed with the service check result. Depending
+on the nagios configuration, HTML may be escaped.
+
+=back
+
+=head1 CONFIGURATION
+
+A configuration file is expected as the first argument. This file can
+be in any format suppored by Config::Simple, where the simplest is:
+
+    # Comment
+    Key Value
+
+The following configuration keys are used:
+
+=over 2
+
+=item Server
+
+One or more gearman job control servers to connect to separated by
+whitespace.
+
+This direcive may be specified several times.
+
+The default value is "localhost:4730".
+
+=item Queue
+
+The queue to submit results to.
+
+The default value is "check_results".
+
+=item Key
+
+The key used to encrypt the mod gearman data.
+
+The key length must be 32 bytes.
+
+This directive is required, and there is no default value.
+
+=back
+
+=head2 EXAMPLE CONFIGURATION
+
+    # Contact several servers
+    Server icinga1.example.org:4730
+    Server icinga2.example.org:4730
+
+    # Encrypt data with this key
+    Key 0123456789abcdef0123456789abcdef
+
+=cut
+
+use warnings;
+use strict;
+
+use Gearman::Client;
+use MIME::Base64;
+use Crypt::Rijndael;
+use Config::Simple;
+
+sub init_cipher {
+    my $config = shift;
+    my $cipher =
+      Crypt::Rijndael->new( $config->param('Key'),
+        Crypt::Rijndael::MODE_ECB() );
+    return $cipher;
+}
+
+sub init_gearman {
+    my $config = shift;
+    my $client = Gearman::Client->new;
+    $client->job_servers( $config->param('Server') );
+    my $taskset = $client->new_task_set;
+    return $taskset;
+}
+
+sub convert_and_send {
+    my $config                = shift;
+    my $host_check_results    = 0;
+    my $service_check_results = 0;
+    my $unknown_check_results = 0;
+    my $time                  = time;
+    my $queue                 = $config->param("Queue");
+    my $cipher                = init_cipher($config);
+    my $taskset               = init_gearman($config);
+
+    foreach my $line (<STDIN>) {
+        my @elements = split( /\t/, $line );
+        my $num = scalar(@elements);
+        my @job;
+        push(
+            @job,
+            (
+                'type=passive',         'start_time=' . $time,
+                'finish_time=' . $time, 'latency=0.0'
+            )
+        );
+
+        if ( $num == 3 ) {
+            $host_check_results += 1;
+            push(
+                @job,
+                (
+                    'host_name=' . $elements[0],
+                    'return_code=' . $elements[1],
+                    'output=' . $elements[2]
+                )
+            );
+        }
+        elsif ( $num == 4 ) {
+            $service_check_results += 1;
+            push(
+                @job,
+                (
+                    'host_name=' . $elements[0],
+                    'service_description=' . $elements[1],
+                    'return_code=' . $elements[2],
+                    'output=' . $elements[3]
+                )
+            );
+        }
+        else {
+            $unknown_check_results += 1;
+            next;
+        }
+
+        my $plaintext = join( "\n", @job );
+
+        if ( length($plaintext) % 16 != 0 ) {
+            $plaintext .= "\0" x ( 16 - ( length($plaintext) % 16 ) );
+        }
+
+        my $encrypted = $cipher->encrypt($plaintext);
+        my $encoded   = encode_base64($encrypted);
+
+        $taskset->add_task( $queue => $encoded );
+    }
+
+    $taskset->wait;
+    return ( $host_check_results, $service_check_results,
+        $unknown_check_results );
+}
+
+sub parse_config {
+    my $file = shift;
+    my $c    = Config::Simple->new($file);
+
+    # Set up default values. unless specified in the configuration
+    # file.
+    $c->param( 'Server', 'localhost:4730' ) unless ( $c->param('Server') );
+    $c->param( 'Queue',  'check_results' )  unless ( $c->param('Queue') );
+
+    # Require a key of 32 bytes.
+    die "Key must be 32 bytes\n" unless ( length( $c->param('Key') ) == 32 );
+
+    return $c;
+}
+
+sub usage {
+    print "Usage: $0 <configuration file>\n";
+    print "See also \"perldoc $0\"\n";
+}
+
+if ( $#ARGV != 0 ) {
+    usage;
+    exit 1;
+}
+my $file   = $ARGV[0];
+my $config = parse_config($file);
+my ( $hosts, $services, $unknown ) = convert_and_send($config);
+print STDERR
+  "OK: Sent $hosts host and $services service check results to gearman\n";
+if ($unknown) {
+    print STDERR "Warning: $unknown unknown input lines were dropped\n";
+}
