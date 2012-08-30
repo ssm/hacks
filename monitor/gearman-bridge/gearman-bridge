@@ -1,0 +1,75 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+gearman-bridge - Copy tasks from one queue to multiple others
+
+=head1 AUTHOR
+
+Stig Sandbeck Mathisen <ssm@redpill-linpro.com>
+
+=head1 SYNOPSIS
+
+This program listens on one queue, and copies all tasks to several
+other queues.
+
+This is used to accept passive icinga check results on one queue, and
+send them to multiple icinga instances, each listening on several
+queues.
+
+=head1 LICENCE
+
+gearman-bridge is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+gearman-bridge is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with gearman-bridge.  If not, see <http://www.gnu.org/licenses/>.
+
+=cut
+
+use strict;
+use warnings;
+
+use Gearman::Client;
+use Gearman::Worker;
+
+my $config = {
+    src => {
+        job_servers => 'localhost:4730',
+        queue       => 'check_results'
+    },
+    dst => {
+        job_servers => 'localhost:4730',
+        queues =>
+            [ 'check_results_icinga1', 'check_results_icinga2' ]
+    }
+};
+
+# Set up the source and destination
+my $worker = Gearman::Worker->new;
+$worker->job_servers( $config->{src}->{job_servers} );
+
+my $client = Gearman::Client->new;
+$client->job_servers( $config->{dst}->{job_servers} );
+
+# Register function which will copy from one queue to the others.
+$worker->register_function(
+    'check_results' => sub {
+        my $self = shift;
+        ### Got: $self->arg
+        foreach my $queue ( @{ $config->{dst}->{queues} } ) {
+            ### Queue: $queue
+            ### Data: $self->arg
+            $client->dispatch_background( $queue, $self->arg );
+        }
+    }
+);
+
+$worker->work;
