@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# check_spamd - Icinga / Nagios plugin to check the state of spamd.
+#
+# 2012 Stig Sandbeck Mathisen <ssm@redpill-linpro.com>
+
+# check_spamd is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Mynch is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Mynch.  If not, see <http://www.gnu.org/licenses/>.
+
+# Defaults
+host=localhost
+port=783
+
+# States
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKNOWN=3
+
+TEMP=$(getopt -o H:p: -n check_spamd --long host:,port: -- "$@")
+if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
+
+eval set -- "$TEMP"
+while true ; do
+    case "$1" in
+        -H|--host) host="$2"; shift 2 ;;
+        -p|--port) port="$2"; shift 2 ;;
+        --) shift ; break ;;
+        *) echo "Internal error!" ; exit 1 ;;
+    esac
+done
+
+check_hostname() {
+    getent hosts "$host" >/dev/null
+}
+check_spamd_keepalive() {
+    spamc -K --dest="$host" --port="$port"
+}
+
+check_spamd_result() {
+    spamc --check --dest="$host" --port="$port" <<EOF
+Subject: Test spam mail (GTUBE)
+Message-ID: <GTUBE1.1010101@example.net>
+Date: Wed, 23 Jul 2003 23:30:00 +0200
+From: Sender <sender@example.net>
+To: Recipient <recipient@example.net>
+Precedence: junk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+This is the GTUBE, the
+	Generic
+	Test for
+	Unsolicited
+	Bulk
+	Email
+
+If your spam filter supports it, the GTUBE provides a test by which you
+can verify that the filter is installed correctly and is detecting incoming
+spam. You can send yourself a test mail containing the following string of
+characters (in upper case and with no white spaces and line breaks):
+
+XJS*C4JDBQADN1.NSBN3*2IDNEN*GTUBE-STANDARD-ANTI-UBE-TEST-EMAIL*C.34X
+
+You should send this test mail from an account outside of your network.
+EOF
+}
+
+
+if ! check_hostname; then
+    printf 'UNKNOWN: hostname "%s" not found\n' "$host"
+    exit $STATE_UNKNOWN
+fi
+
+keepalive_stdout=$(check_spamd_keepalive)
+keepalive_exitcode="$?"
+
+if [ "$keepalive_exitcode" = "0" ]; then
+    result_stdout=$(check_spamd_result)
+    result_exitcode="$?"
+fi
+
+case $keepalive_exitcode in
+    0)
+        # spamd is responding
+        case $result_exitcode in
+            0)
+                printf "CRITICAL: spamd is up (%s), but test spam message not marked as spam (%s)\n" \
+                    "$keepalive_stdout" \
+                    "$result_stdout"
+                exit $STATE_CRITICAL
+                ;;
+            1)
+                printf "OK: spamd is up (%s), and test spam message marked as spam (%s)\n" \
+                    "$keepalive_stdout" \
+                    "$result_stdout"
+                exit $STATE_OK
+                ;;
+            *)
+                printf "CRITICAL: spamd is up (%s), but unable to classify message (%s)\n" \
+                    "$keepalive_stdout" \
+                    "$result_stdout"
+                exit $STATE_CRITICAL
+                ;;
+        esac
+        ;;
+    *)
+        # Failed to connect somehow.
+        printf "CRITICAL: Unable to connect to spamd at %s:%d, exitcode: %d (%s)\n" \
+            "$host" \
+            "$port" \
+            "$spamc_exitcode" \
+            $( if test -e /usr/include/sysexits.h; then
+                 awk '$1 == "#define" && $3 == ENVIRON["spamc_exitcode"] {print $2}' /usr/include/sysexits.h;
+               fi)
+        exit $STATE_CRITICAL
+        ;;
+esac
