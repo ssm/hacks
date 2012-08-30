@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # check_spamd - Icinga / Nagios plugin to check the state of spamd.
 #
