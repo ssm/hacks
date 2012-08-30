@@ -117,13 +117,14 @@ case $keepalive_exitcode in
         ;;
     *)
         # Failed to connect somehow.
+        export keepalive_exitcode
         printf "CRITICAL: Unable to connect to spamd at %s:%d, exitcode: %d (%s)\n" \
             "$host" \
             "$port" \
-            "$spamc_exitcode" \
+            "$keepalive_exitcode" \
             $( if test -e /usr/include/sysexits.h; then
-                 awk '$1 == "#define" && $3 == ENVIRON["spamc_exitcode"] {print $2}' /usr/include/sysexits.h;
-               fi)
+                 awk '$1 == "#define" && $3 == ENVIRON["keepalive_exitcode"] {print $2}' /usr/include/sysexits.h;
+            fi)
         exit $STATE_CRITICAL
         ;;
 esac
