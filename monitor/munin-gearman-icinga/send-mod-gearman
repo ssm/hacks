@@ -192,7 +192,7 @@ sub convert_and_send {
 
 sub parse_config {
     my $file = shift;
-    my $c    = Config::Simple->new($file);
+    my $c    = Config::Simple->new($file) or die Config::Simple->error();
 
     # Set up default values. unless specified in the configuration
     # file.
