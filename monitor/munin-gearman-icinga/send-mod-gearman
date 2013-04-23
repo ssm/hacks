@@ -106,6 +106,9 @@ use Gearman::Client;
 use MIME::Base64;
 use Crypt::Rijndael;
 use Config::Simple;
+use Getopt::Long;
+
+my $verbose;
 
 sub init_cipher {
     my $config = shift;
@@ -206,19 +209,28 @@ sub parse_config {
 }
 
 sub usage {
-    print "Usage: $0 <configuration file>\n";
-    print "See also \"perldoc $0\"\n";
+    print STDERR "Usage: $0 [-v] <configuration file>\n";
+    print STDERR "See also \"perldoc $0\"\n";
+    exit 64;
 }
 
-if ( $#ARGV != 0 ) {
-    usage;
-    exit 1;
-}
+GetOptions( 'verbose|v' => \$verbose )
+    or usage();
+
+usage unless @ARGV == 1;
 my $file   = $ARGV[0];
+
+# Gearman::Client has a reasonable timeout, at least in Lucid, but we
+# want to be sure this process never sticks around forever
+alarm(60);
+
 my $config = parse_config($file);
 my ( $hosts, $services, $unknown ) = convert_and_send($config);
+
 print STDERR
-  "OK: Sent $hosts host and $services service check results to gearman\n";
+    "OK: Sent $hosts host and $services service check results to gearman\n"
+    if ( $verbose || $unknown );
+
 if ($unknown) {
     print STDERR "Warning: $unknown unknown input lines were dropped\n";
 }
