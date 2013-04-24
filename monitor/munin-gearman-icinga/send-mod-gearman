@@ -102,7 +102,8 @@ This directive is required, and there is no default value.
 use warnings;
 use strict;
 
-use Gearman::Client;
+use Gearman::XS qw(:constants);
+use Gearman::XS::Client;
 use MIME::Base64;
 use Crypt::Rijndael;
 use Config::Simple;
@@ -120,10 +121,17 @@ sub init_cipher {
 
 sub init_gearman {
     my $config = shift;
-    my $client = Gearman::Client->new;
-    $client->job_servers( $config->param('Server') );
-    my $taskset = $client->new_task_set;
-    return $taskset;
+    my $client = Gearman::XS::Client->new;
+    for my $server ( $config->param('Server') ) {
+        my ( $host, $port ) = split( /:/, $server );
+        my $ret = $client->add_server( $host, $port );
+        if ( $ret != GEARMAN_SUCCESS ) {
+            printf( STDERR "Unable to connect to server: %s\n  %s\n",
+                $server, $client->error() );
+            exit(1);
+        }
+    }
+    return $client;
 }
 
 sub convert_and_send {
@@ -134,7 +142,7 @@ sub convert_and_send {
     my $time                  = time;
     my $queue                 = $config->param("Queue");
     my $cipher                = init_cipher($config);
-    my $taskset               = init_gearman($config);
+    my $client                = init_gearman($config);
 
     foreach my $line (<STDIN>) {
         my @elements = split( /\t/, $line );
@@ -182,10 +190,18 @@ sub convert_and_send {
         my $encrypted = $cipher->encrypt($plaintext);
         my $encoded   = encode_base64($encrypted);
 
-        $taskset->add_task( $queue => $encoded );
+        my ( $ret, $task ) = $client->add_task( $queue, $encoded );
+        if ( $ret != GEARMAN_SUCCESS ) {
+            printf( STDERR "Warning: unable to add task: %s\n",
+                $client->error()
+            );
+        }
     }
 
-    $taskset->wait;
+    my $ret = $client->run_tasks();
+    if ( $ret != GEARMAN_SUCCESS ) {
+        printf( STDERR "Error: unable to run tasks: %s\n", $client->error() );
+    }
     return ( $host_check_results, $service_check_results,
         $unknown_check_results );
 }
