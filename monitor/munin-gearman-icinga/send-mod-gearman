@@ -113,7 +113,7 @@ my $verbose;
 sub init_cipher {
     my $config = shift;
     my $cipher =
-      Crypt::Rijndael->new( $config->param('Key'),
+        Crypt::Rijndael->new( $config->param('Key'),
         Crypt::Rijndael::MODE_ECB() );
     return $cipher;
 }
@@ -142,8 +142,7 @@ sub convert_and_send {
         my @job;
         push(
             @job,
-            (
-                'type=passive',         'start_time=' . $time,
+            (   'type=passive',         'start_time=' . $time,
                 'finish_time=' . $time, 'latency=0.0'
             )
         );
@@ -152,8 +151,7 @@ sub convert_and_send {
             $host_check_results += 1;
             push(
                 @job,
-                (
-                    'host_name=' . $elements[0],
+                (   'host_name=' . $elements[0],
                     'return_code=' . $elements[1],
                     'output=' . $elements[2]
                 )
@@ -163,8 +161,7 @@ sub convert_and_send {
             $service_check_results += 1;
             push(
                 @job,
-                (
-                    'host_name=' . $elements[0],
+                (   'host_name=' . $elements[0],
                     'service_description=' . $elements[1],
                     'return_code=' . $elements[2],
                     'output=' . $elements[3]
@@ -195,7 +192,7 @@ sub convert_and_send {
 
 sub parse_config {
     my $file = shift;
-    my $c    = Config::Simple->new($file) or die Config::Simple->error();
+    my $c = Config::Simple->new($file) or die Config::Simple->error();
 
     # Set up default values. unless specified in the configuration
     # file.
@@ -218,7 +215,7 @@ GetOptions( 'verbose|v' => \$verbose )
     or usage();
 
 usage unless @ARGV == 1;
-my $file   = $ARGV[0];
+my $file = $ARGV[0];
 
 # Gearman::Client has a reasonable timeout, at least in Lucid, but we
 # want to be sure this process never sticks around forever
