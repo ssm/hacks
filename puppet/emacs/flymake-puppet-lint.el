@@ -58,6 +58,6 @@
        flymake-puppet-lint-err-line-patterns)
   (if (executable-find flymake-puppet-lint-executable)
       (flymake-mode t)
-    (message "not emabling flymake: executable '%s' not found"
+    (message "not enabling flymake: executable '%s' not found"
              flymake-puppet-lint-executable)))
 (provide 'flymake-puppet-lint)
