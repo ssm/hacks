@@ -1,0 +1,8 @@
+[Unit]
+Description=Run debci batch
+Documentation=http://debci.local/
+
+[Service]
+Environment= "HOME=/nonexistent"
+Type=oneshot
+ExecStart=/usr/bin/debci batch

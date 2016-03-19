@@ -1,0 +1,9 @@
+[Unit]
+Description=debci worker
+Documentation=http://debci.local/
+
+[Service]
+ExecStart=/usr/bin/debci worker --backend schroot
+
+[Install]
+WantedBy=debian-devel.target
